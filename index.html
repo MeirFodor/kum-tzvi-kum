@@ -198,13 +198,18 @@
 </div>
 
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 /* ============================================================
-   קום צבי קום! — v2: גרפיקה משודרגת, מכשולים, מוזיקה, קושי אמיתי
+   קום צבי קום! — v3: גרפיקה חלקה ומעוגלת בסגנון ראנר מודרני
    ============================================================ */
 
 const rand = (a,b)=>a+Math.random()*(b-a);
@@ -308,21 +313,28 @@ const BG_DAY = new THREE.Color(0xa9d3ee), BG_DARK = new THREE.Color(0x0a0a16);
 scene.background = BG_DAY.clone();
 scene.fog = new THREE.Fog(0xa9d3ee, 24, 44);
 
+// תאורת סביבה — נותנת לחומרים עומק והשתקפויות רכות (המפתח למראה "משחק מודרני")
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
 const camera = new THREE.PerspectiveCamera(56, innerWidth/innerHeight, 0.1, 100);
 camera.position.set(0, 3.7, 7.4);
 
-const hemi = new THREE.HemisphereLight(0xfff2d8, 0x8a7aa8, 0.75);
+const hemi = new THREE.HemisphereLight(0xfff2d8, 0x9a8ab8, 0.45);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffe2b0, 1.85);
+const sun = new THREE.DirectionalLight(0xffe2b0, 1.5);
 sun.position.set(-5, 8, -2);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left=-9; sun.shadow.camera.right=9; sun.shadow.camera.top=9; sun.shadow.camera.bottom=-9;
+sun.shadow.radius = 6;
+sun.shadow.bias = -0.0002;
+sun.shadow.normalBias = 0.02;
 scene.add(sun);
 const lampLight = new THREE.PointLight(0xffd9a0, 0.55, 12);
 lampLight.position.set(3.4, 2.4, -3.6);
 scene.add(lampLight);
-const baseLight = { hemi:0.75, sun:1.85, lamp:0.55 };
+const baseLight = { hemi:0.45, sun:1.5, lamp:0.55 };
 
 addEventListener('resize', ()=>{
   camera.aspect = innerWidth/innerHeight;
@@ -331,13 +343,26 @@ addEventListener('resize', ()=>{
 });
 
 /* ---------- helpers ---------- */
-const mat = (color, opts={}) => new THREE.MeshStandardMaterial({ color, roughness:0.85, metalness:0.02, ...opts });
+const mat = (color, opts={}) => new THREE.MeshStandardMaterial({ color, roughness:0.68, metalness:0.02, ...opts });
+const RB = (w,h,d,r)=>new RoundedBoxGeometry(w, h, d, 4, r);   // קופסה מעוגלת — הבסיס למראה הרך
 function canvasTex(w, h, draw){
   const c = document.createElement('canvas'); c.width=w; c.height=h;
   draw(c.getContext('2d'));
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+// צללית רכה מתחת לאובייקטים — מעגן אותם לרצפה
+const blobTex = canvasTex(128, 128, cx=>{
+  const g2 = cx.createRadialGradient(64,64,6, 64,64,60);
+  g2.addColorStop(0,'rgba(0,0,0,.38)'); g2.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle = g2; cx.fillRect(0,0,128,128);
+});
+function blobShadow(r){
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(r*2, r*2),
+    new THREE.MeshBasicMaterial({ map:blobTex, transparent:true, depthWrite:false }));
+  m.rotation.x = -Math.PI/2; m.position.y = 0.015; m.renderOrder = 1;
+  return m;
 }
 
 /* ---------- room ---------- */
@@ -347,13 +372,25 @@ function buildRoom(){
   const g = new THREE.Group();
 
   // floor — wooden planks
-  const floorTex = canvasTex(256, 256, cx=>{
-    cx.fillStyle='#b07a45'; cx.fillRect(0,0,256,256);
-    for(let i=0;i<8;i++){
-      cx.fillStyle = i%2 ? '#a06c3a' : '#b8824c';
-      cx.fillRect(0, i*32, 256, 32);
-      cx.fillStyle='rgba(60,30,10,.4)'; cx.fillRect(0, i*32, 256, 2);
-      for(let j=0;j<3;j++){ cx.fillStyle='rgba(60,30,10,.25)'; cx.fillRect(rand(0,240), i*32+rand(4,26), rand(8,22), 1.4); }
+  const floorTex = canvasTex(512, 512, cx=>{
+    const tones = ['#c08a52','#b57e48','#c9945c','#ba8750','#c28d55','#b0793f'];
+    cx.fillStyle='#b57e48'; cx.fillRect(0,0,512,512);
+    for(let row=0; row<8; row++){
+      const y = row*64;
+      let x = row%2 ? -40 : 0;   // קרשים בהזחה לסירוגין
+      while(x < 512){
+        const w = 130 + Math.floor(rand(0,60));
+        cx.fillStyle = tones[Math.floor(rand(0,tones.length))];
+        cx.fillRect(x, y, w, 64);
+        // הארה עדינה בראש כל קרש
+        const grd = cx.createLinearGradient(0, y, 0, y+64);
+        grd.addColorStop(0,'rgba(255,235,200,.16)'); grd.addColorStop(.25,'rgba(255,235,200,0)');
+        grd.addColorStop(.9,'rgba(70,35,10,0)'); grd.addColorStop(1,'rgba(70,35,10,.22)');
+        cx.fillStyle = grd; cx.fillRect(x, y, w, 64);
+        cx.fillStyle='rgba(70,35,10,.5)'; cx.fillRect(x+w-2, y, 2, 64);   // מרווח בין קרשים
+        x += w;
+      }
+      cx.fillStyle='rgba(70,35,10,.45)'; cx.fillRect(0, y, 512, 2.5);
     }
   });
   floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping; floorTex.repeat.set(4,3);
@@ -370,19 +407,24 @@ function buildRoom(){
   rug.rotation.x = -Math.PI/2; rug.position.set(0.2, 0.012, 2.4); rug.receiveShadow = true;
   g.add(rug);
 
-  // walls — warm cream with wainscot
-  const wallMat = mat(0xe6dcc2, {roughness:1});
-  const wainscotMat = mat(0xc7b38f, {roughness:1});
-  const wallBack = new THREE.Mesh(new THREE.BoxGeometry(ROOM.W, 4.6, 0.2), wallMat);
-  wallBack.position.set(0, 2.3, -ROOM.D/2); wallBack.receiveShadow=true; g.add(wallBack);
-  const wbLow = new THREE.Mesh(new THREE.BoxGeometry(ROOM.W, 1.0, 0.22), wainscotMat);
-  wbLow.position.set(0, 0.5, -ROOM.D/2); g.add(wbLow);
-  const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.6, ROOM.D), wallMat);
-  wallL.position.set(-ROOM.W/2, 2.3, 0); wallL.receiveShadow=true; g.add(wallL);
-  const wlLow = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.0, ROOM.D), wainscotMat);
-  wlLow.position.set(-ROOM.W/2, 0.5, 0); g.add(wlLow);
-  const wallR = wallL.clone(); wallR.position.x = ROOM.W/2; g.add(wallR);
-  const wrLow = wlLow.clone(); wrLow.position.x = ROOM.W/2; g.add(wrLow);
+  // walls — טורקיז רך למעלה, פנל שמנת למטה, פס הפרדה ופנל רצפה
+  const wallMat = mat(0xbfd9cd, {roughness:.95});
+  const wainscotMat = mat(0xf2ecdd, {roughness:.9});
+  const railMat = mat(0xe8ddc4, {roughness:.85});
+  const skirtMat = mat(0x8a6a44, {roughness:.8});
+  function wallSet(w, d, px, pz, alongX){
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(alongX?w:0.2, 4.6, alongX?0.2:d), wallMat);
+    wall.position.set(px, 2.3, pz); wall.receiveShadow=true; g.add(wall);
+    const low = new THREE.Mesh(new THREE.BoxGeometry(alongX?w:0.24, 1.15, alongX?0.24:d), wainscotMat);
+    low.position.set(px, 0.575, pz); low.receiveShadow=true; g.add(low);
+    const rail = new THREE.Mesh(RB(alongX?w:0.27, 0.08, alongX?0.27:d, 0.02), railMat);
+    rail.position.set(px, 1.16, pz); g.add(rail);
+    const skirt = new THREE.Mesh(RB(alongX?w:0.28, 0.14, alongX?0.28:d, 0.02), skirtMat);
+    skirt.position.set(px, 0.07, pz); g.add(skirt);
+  }
+  wallSet(ROOM.W, 0, 0, -ROOM.D/2, true);
+  wallSet(0, ROOM.D, -ROOM.W/2, 0, false);
+  wallSet(0, ROOM.D, ROOM.W/2, 0, false);
 
   // window + frame + curtains + sunbeam
   const winFrame = new THREE.Mesh(new THREE.BoxGeometry(2.7, 2.0, 0.12), mat(0x7a5230));
@@ -402,8 +444,8 @@ function buildRoom(){
   bar1.position.set(-3.2, 2.5, -ROOM.D/2+0.22); g.add(bar1);
   const bar2 = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.08, 0.06), mat(0x7a5230));
   bar2.position.set(-3.2, 2.5, -ROOM.D/2+0.22); g.add(bar2);
-  const curtMat = mat(0xd98a4a, {roughness:1});
-  const curtL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.3, 0.08), curtMat);
+  const curtMat = mat(0xf0913f, {roughness:.85});
+  const curtL = new THREE.Mesh(RB(0.5, 2.3, 0.12, 0.05), curtMat);
   curtL.position.set(-4.65, 2.5, -ROOM.D/2+0.2); curtL.rotation.z = 0.03; g.add(curtL);
   const curtR = curtL.clone(); curtR.position.x = -1.75; curtR.rotation.z = -0.03; g.add(curtR);
   // קרן אור בוקר
@@ -414,8 +456,10 @@ function buildRoom(){
   g.add(sunbeam);
 
   // door on right wall
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, 1.3), mat(0x8a5a32));
+  const door = new THREE.Mesh(RB(0.12, 2.6, 1.3, 0.04), mat(0x9a6636, {roughness:.6}));
   door.position.set(ROOM.W/2-0.12, 1.3, 1.2); g.add(door);
+  const doorPanel = new THREE.Mesh(RB(0.06, 1.0, 0.9, 0.03), mat(0x8a5a2e, {roughness:.6}));
+  doorPanel.position.set(ROOM.W/2-0.16, 1.75, 1.2); g.add(doorPanel);
   const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.8, 1.5), mat(0x6e4626));
   doorFrame.position.set(ROOM.W/2-0.06, 1.35, 1.2); g.add(doorFrame);
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06), mat(0xd9b23a, {metalness:.7, roughness:.3}));
@@ -448,7 +492,7 @@ function buildRoom(){
     }),
   ];
   posterDefs.forEach((tex,i)=>{
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.32, 0.05), mat(0x5a3d22));
+    const frame = new THREE.Mesh(RB(1.0, 1.32, 0.05, 0.02), mat(0x5a3d22, {roughness:.5}));
     frame.position.set(0.9+i*1.45, 2.75, -ROOM.D/2+0.22);
     frame.rotation.z = rand(-0.04, 0.04);
     g.add(frame);
@@ -470,7 +514,7 @@ function buildRoom(){
   clockFace.position.set(4.6, 3.4, -ROOM.D/2+0.22); g.add(clockFace);
 
   // מדף ספרים מעל השולחן של צבי
-  const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.34), mat(0x8a5a32));
+  const shelf = new THREE.Mesh(RB(1.7, 0.08, 0.34, 0.02), mat(0x8a5a32, {roughness:.55}));
   shelf.position.set(3.5, 2.2, -ROOM.D/2+0.35); shelf.castShadow=true; g.add(shelf);
   const bookColors = [0xc0392b, 0x2980b9, 0x27ae60, 0x8e44ad, 0xf39c12, 0x16a085, 0xd35400];
   let bx = 2.85;
@@ -483,9 +527,9 @@ function buildRoom(){
   });
 
   // ארון בגדים
-  const ward = new THREE.Mesh(new THREE.BoxGeometry(0.85, 2.7, 1.9), mat(0x8a5a32));
+  const ward = new THREE.Mesh(RB(0.85, 2.7, 1.9, 0.06), mat(0x9a6636, {roughness:.55}));
   ward.position.set(-ROOM.W/2+0.55, 1.35, -1.3); ward.castShadow=true; g.add(ward);
-  const wardDoorLine = new THREE.Mesh(new THREE.BoxGeometry(0.87, 2.5, 0.02), mat(0x6e4626));
+  const wardDoorLine = new THREE.Mesh(new THREE.BoxGeometry(0.87, 2.5, 0.02), mat(0x7a5230));
   wardDoorLine.position.set(-ROOM.W/2+0.55, 1.3, -1.3); g.add(wardDoorLine);
   [[-1.05],[-1.55]].forEach(([z])=>{
     const kb = new THREE.Mesh(new THREE.SphereGeometry(0.035), mat(0xd9b23a, {metalness:.6}));
@@ -509,25 +553,27 @@ function buildRoom(){
 }
 function makeBedFrame(blanketColor, opts={}){
   const g = new THREE.Group();
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.32, 2.4), mat(0x8a5a32));
+  const woodMat = mat(0x9a6636, {roughness:.5});
+  const frame = new THREE.Mesh(RB(1.34, 0.32, 2.44, 0.06), woodMat);
   frame.position.y = 0.26; frame.castShadow=true; frame.receiveShadow=true; g.add(frame);
-  const legGeo = new THREE.BoxGeometry(0.1,0.26,0.1);
+  const legGeo = new THREE.CylinderGeometry(0.055, 0.045, 0.26, 10);
   [[-0.55,-1.1],[0.55,-1.1],[-0.55,1.1],[0.55,1.1]].forEach(([x,z])=>{
-    const l = new THREE.Mesh(legGeo, mat(0x6e4626)); l.position.set(x,0.13,z); g.add(l);
+    const l = new THREE.Mesh(legGeo, mat(0x6e4626, {roughness:.5})); l.position.set(x,0.13,z); g.add(l);
   });
-  const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 2.3), mat(0xf2ead8));
+  const mattress = new THREE.Mesh(RB(1.22, 0.2, 2.3, 0.07), mat(0xf7f2e4, {roughness:.85}));
   mattress.position.y = 0.5; mattress.castShadow=true; g.add(mattress);
-  const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.75, 0.1), mat(0x8a5a32));
-  headboard.position.set(0, 0.68, -1.2); g.add(headboard);
+  const headboard = new THREE.Mesh(RB(1.34, 0.8, 0.12, 0.05), woodMat);
+  headboard.position.set(0, 0.7, -1.22); headboard.castShadow=true; g.add(headboard);
+  const shadow = blobShadow(1.25); shadow.scale.z = 1.6; g.add(shadow);
   if(!opts.noBlanket){
-    const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.14, 1.6), mat(blanketColor));
+    const blanket = new THREE.Mesh(RB(1.26, 0.16, 1.6, 0.06), mat(blanketColor, {roughness:.8}));
     if(opts.messy){
       blanket.position.set(0.15, 0.62, 0.5); blanket.rotation.y = 0.25; blanket.rotation.z = 0.06;
       blanket.scale.set(0.9, 1, 0.8);
     } else blanket.position.set(0, 0.63, 0.35);
     blanket.castShadow=true; g.add(blanket);
-    const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.16, 0.5), mat(0xffffff));
-    pillow.position.set(opts.messy?-0.1:0, 0.63, -0.85);
+    const pillow = new THREE.Mesh(RB(0.85, 0.2, 0.52, 0.08), mat(0xffffff, {roughness:.9}));
+    pillow.position.set(opts.messy?-0.1:0, 0.64, -0.85);
     if(opts.messy) pillow.rotation.y = -0.3;
     g.add(pillow);
   }
@@ -540,7 +586,7 @@ function makeDani(){
   const g = new THREE.Group();
 
   // נעליים
-  const shoeGeo = new THREE.BoxGeometry(0.24, 0.13, 0.4);
+  const shoeGeo = RB(0.24, 0.14, 0.42, 0.05);
   const shoeL = new THREE.Mesh(shoeGeo, mat(0x15151a, {roughness:.4})); shoeL.position.set(-0.2, 0.065, 0.06); shoeL.castShadow=true; g.add(shoeL);
   const shoeR = shoeL.clone(); shoeR.position.x = 0.2; g.add(shoeR);
 
@@ -549,41 +595,43 @@ function makeDani(){
   const legL = new THREE.Mesh(legGeo, mat(0x1c1c22)); legL.position.set(-0.2, 0.38, 0); legL.castShadow=true; g.add(legL);
   const legR = legL.clone(); legR.position.x = 0.2; g.add(legR);
 
-  // אגן + חגורה
-  const hips = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 16), mat(0x1c1c22));
-  hips.scale.set(1.05, 0.62, 0.9); hips.position.y = 0.72; hips.castShadow=true; g.add(hips);
-  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.415, 0.43, 0.09, 20), mat(0x0d0d10, {roughness:.4}));
-  belt.scale.set(1.03, 1, 0.88); belt.position.y = 0.92; g.add(belt);
-  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.03), mat(0xc9a23a, {metalness:.7, roughness:.3}));
-  buckle.position.set(0, 0.92, 0.375); g.add(buckle);
-
-  // כרס — חולצה לבנה מכופתרת
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 18), mat(0xf7f6f0, {roughness:.75}));
-  belly.scale.set(1.02, 1.1, 0.9); belly.position.y = 1.28; belly.castShadow=true; g.add(belly);
-  // רצועת כפתורים
-  const placket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 0.02), mat(0xecebe2));
-  placket.position.set(0, 1.26, 0.443); placket.rotation.x = -0.06; g.add(placket);
-  for(let i=0;i<4;i++){
+  // גוף חלק אחד — Lathe: מכנסיים שחורים שנמשכים לחולצה לבנה עם כרס
+  const lathe = (pts, m)=>{
+    const mesh = new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r,y])=>new THREE.Vector2(r,y)), 28), m);
+    mesh.scale.z = 0.92; mesh.castShadow = true;
+    return mesh;
+  };
+  const pants = lathe([[0.02,0.5],[0.33,0.52],[0.43,0.66],[0.465,0.84],[0.47,1.0]], mat(0x1c1c22, {roughness:.75}));
+  g.add(pants);
+  const shirt = lathe([[0.465,0.97],[0.5,1.12],[0.487,1.26],[0.43,1.42],[0.31,1.56],[0.2,1.66],[0.15,1.74],[0.02,1.77]], mat(0xf7f6f0, {roughness:.6}));
+  g.add(shirt);
+  // חגורה + אבזם
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.478, 0.487, 0.1, 26), mat(0x0d0d10, {roughness:.35}));
+  belt.scale.z = 0.93; belt.position.y = 0.99; g.add(belt);
+  const buckle = new THREE.Mesh(RB(0.11, 0.08, 0.03, 0.012), mat(0xd9b23a, {metalness:.75, roughness:.25}));
+  buckle.position.set(0, 0.99, 0.455); g.add(buckle);
+  // כפתורים לאורך העקומה של החולצה
+  [[1.1,0.5],[1.26,0.487],[1.42,0.43],[1.56,0.31]].forEach(([y,r])=>{
     const b = new THREE.Mesh(new THREE.SphereGeometry(0.026), mat(0x444444));
-    b.position.set(0, 0.98+i*0.19, 0.452 + (i===1||i===2 ? 0.012 : 0));
+    b.position.set(0, y, r*0.92+0.008);
     g.add(b);
-  }
+  });
   // צווארון
-  const colL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.03), mat(0xffffff));
-  colL.position.set(-0.1, 1.72, 0.21); colL.rotation.set(-0.5, 0, 0.5); g.add(colL);
-  const colR = colL.clone(); colR.position.x = 0.1; colR.rotation.set(-0.5, 0, -0.5); g.add(colR);
+  const colL = new THREE.Mesh(RB(0.16, 0.1, 0.035, 0.012), mat(0xffffff, {roughness:.55}));
+  colL.position.set(-0.09, 1.74, 0.13); colL.rotation.set(-0.5, 0, 0.5); g.add(colL);
+  const colR = colL.clone(); colR.position.x = 0.09; colR.rotation.set(-0.5, 0, -0.5); g.add(colR);
 
   // זרועות — תלויות מהכתפיים כלפי מטה
   function makeArm(side){ // side: -1 שמאל, 1 ימין
     const grp = new THREE.Group();
-    grp.position.set(side*0.5, 1.55, 0);
+    grp.position.set(side*0.38, 1.6, 0);
     const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.36, 6, 10), mat(0xf7f6f0, {roughness:.75}));
     sleeve.position.y = -0.27; sleeve.castShadow=true; grp.add(sleeve);
     const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.108, 0.108, 0.05, 10), mat(0xffffff));
     cuff.position.y = -0.5; grp.add(cuff);
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.095), mat(SKIN));
     hand.position.y = -0.58; grp.add(hand);
-    grp.rotation.z = -side*0.3;    // מוטות החוצה בגלל הכרס
+    grp.rotation.z = -side*0.45;   // מוטות החוצה בגלל הכרס
     return grp;
   }
   const armL = makeArm(-1); g.add(armL);
@@ -606,15 +654,19 @@ function makeDani(){
   const mustache = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.045, 0.04), mat(0x3a2a1c, {roughness:1}));
   mustache.position.set(0, -0.09, 0.29); head.add(mustache);
   // כיפה שחורה
-  const kippah = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 8, 0, Math.PI*2, 0, Math.PI*0.38), mat(0x111116, {roughness:.6}));
-  kippah.position.set(0, 0.165, -0.07); head.add(kippah);
-  // שיער קצר מסביב (מתחת לכיפה)
-  const hairRing = new THREE.Mesh(new THREE.SphereGeometry(0.315, 18, 8, 0, Math.PI*2, Math.PI*0.28, Math.PI*0.22), mat(0x2a1e12, {roughness:1}));
-  hairRing.position.y = 0.02; head.add(hairRing);
+  const kippah = new THREE.Mesh(new THREE.SphereGeometry(0.27, 18, 10, 0, Math.PI*2, 0, Math.PI*0.4), mat(0x111116, {roughness:.55}));
+  kippah.position.set(0, 0.08, -0.04); head.add(kippah);
+  // שיער קצר מסביב — צמוד לשולי הכיפה, בלי רווח עור
+  const hairRing = new THREE.Mesh(new THREE.SphereGeometry(0.318, 18, 10, Math.PI*0.72, Math.PI*1.56, Math.PI*0.2, Math.PI*0.3), mat(0x2a1e12, {roughness:1}));
+  hairRing.position.y = 0.015; hairRing.scale.z = 0.98; head.add(hairRing);
   // עיניים + גבות + אף
-  const eyeGeo = new THREE.SphereGeometry(0.042);
-  const eL = new THREE.Mesh(eyeGeo, mat(0x222222)); eL.position.set(-0.1, 0.05, 0.285); head.add(eL);
-  const eR = eL.clone(); eR.position.x = 0.1; head.add(eR);
+  // עיניים עם לובן ואישונים — מבט חי
+  [-1,1].forEach(s=>{
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 12), mat(0xffffff, {roughness:.25}));
+    white.scale.set(1, 1.1, 0.55); white.position.set(s*0.105, 0.05, 0.27); head.add(white);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), mat(0x1e1410, {roughness:.15}));
+    pupil.position.set(s*0.1, 0.045, 0.315); head.add(pupil);
+  });
   const browGeo = new THREE.BoxGeometry(0.1, 0.025, 0.03);
   const brL = new THREE.Mesh(browGeo, mat(0x2a1e12)); brL.position.set(-0.1, 0.13, 0.285); brL.rotation.z = 0.15; head.add(brL);
   const brR = brL.clone(); brR.position.x = 0.1; brR.rotation.z = -0.15; head.add(brR);
@@ -626,15 +678,15 @@ function makeDani(){
 }
 
 /* ---------- Zvi (הישן) — הראש על הכרית ליד הקיר ---------- */
-const PAJAMA = 0x9fd0a0, BLANKET_C = 0x4a6fd4;
+const PAJAMA = 0x8fd694, BLANKET_C = 0x3f6be0;
 function makeZvi(){
   const g = new THREE.Group();      // ב-(1.8, 0, -3.4); ראש המיטה לכיוון הקיר (-z)
   const bed = makeBedFrame(BLANKET_C, {noBlanket:true});
   g.add(bed);
 
   // כרית ליד ראש המיטה
-  const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.18, 0.55), mat(0xffffff, {roughness:1}));
-  pillow.position.set(0, 0.63, -0.82); pillow.castShadow=true; g.add(pillow);
+  const pillow = new THREE.Mesh(RB(0.92, 0.2, 0.58, 0.09), mat(0xffffff, {roughness:.9}));
+  pillow.position.set(0, 0.63, -0.82); pillow.rotation.x = -0.05; pillow.castShadow=true; g.add(pillow);
 
   // ציר ירכיים — הגו מתרומם ממנו בישיבה
   const hipPivot = new THREE.Group();
@@ -697,32 +749,36 @@ function makeZvi(){
   zArm.rotation.z = -0.5; zArm.visible = false;
   hipPivot.add(zArm);
 
-  // תפוח רגליים מתחת לשמיכה — הגוף התחתון
-  const bump = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.6, 6, 14), mat(PAJAMA, {roughness:1}));
-  bump.rotation.x = Math.PI/2;
-  bump.scale.set(1, 1, 0.52);      // שטוח — רגליים שכובות, כולו מתחת לשמיכה
-  bump.position.set(0, 0.56, 0.55);
-  bump.castShadow = true;
+  // עוגן התנגשות לרגליים — הנפח הוויזואלי הוא תל השמיכה עצמו
+  const bump = new THREE.Object3D();
+  bump.position.set(0, 0.72, 0.5);
   g.add(bump);
 
-  // שמיכה אמיתית: מלבן עליון + כנפיים שנופלות על צידי המזרן + קיפול סדין
+  // שמיכה חלקה: משטח מעוגל + תל גוף מובנה + כנפי צד רכות + קיפול סדין
   const blanketGrp = new THREE.Group();
-  const blMat = mat(BLANKET_C, {roughness:.95});
-  const blTop = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.09, 1.75), blMat);
+  const blMat = mat(BLANKET_C, {roughness:.8});
+  const blTop = new THREE.Mesh(RB(1.42, 0.12, 1.78, 0.05), blMat);
   blTop.castShadow = true; blanketGrp.add(blTop);
-  // פסים דקורטיביים
-  for(let i=0;i<3;i++){
-    const s = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.015, 0.13), mat(0xd4884a));
-    s.position.set(0, 0.052, -0.55+i*0.55); blanketGrp.add(s);
-  }
+  // תל הגוף — חלק מהשמיכה עצמה
+  const mound = new THREE.Mesh(new THREE.CapsuleGeometry(0.33, 0.8, 8, 18), blMat);
+  mound.rotation.x = Math.PI/2;
+  mound.scale.set(1.08, 1, 0.5);
+  mound.position.set(0, 0.08, 0.22);
+  mound.castShadow = true;
+  blanketGrp.add(mound);
+  // פסים דקורטיביים על החלקים השטוחים
+  [[-0.68],[0.82]].forEach(([z])=>{
+    const s = new THREE.Mesh(RB(1.43, 0.03, 0.15, 0.01), mat(0xf0913f, {roughness:.8}));
+    s.position.set(0, 0.06, z); blanketGrp.add(s);
+  });
   // כנפי צד — נופלות על צידי המזרן
-  const flapL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 1.75), blMat);
-  flapL.position.set(-0.69, -0.22, 0); flapL.rotation.z = 0.1; blanketGrp.add(flapL);
-  const flapR = flapL.clone(); flapR.position.x = 0.69; flapR.rotation.z = -0.1; blanketGrp.add(flapR);
+  const flapL = new THREE.Mesh(RB(0.1, 0.5, 1.78, 0.04), blMat);
+  flapL.position.set(-0.72, -0.24, 0); flapL.rotation.z = 0.12; blanketGrp.add(flapL);
+  const flapR = flapL.clone(); flapR.position.x = 0.72; flapR.rotation.z = -0.12; blanketGrp.add(flapR);
   // קיפול סדין לבן בקצה העליון (ליד החזה)
-  const fold = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.1, 0.22), mat(0xffffff));
-  fold.position.set(0, 0.015, -0.82); blanketGrp.add(fold);
-  blanketGrp.position.set(0, 0.78, 0.38);
+  const fold = new THREE.Mesh(RB(1.44, 0.1, 0.28, 0.04), mat(0xffffff, {roughness:.9}));
+  fold.position.set(0, 0.02, -0.84); blanketGrp.add(fold);
+  blanketGrp.position.set(0, 0.72, 0.38);
   g.add(blanketGrp);
 
   // שכיבה: הגו נשכב לכיוון הקיר (הראש על הכרית)
@@ -756,7 +812,7 @@ function makeKinderMesh(golden){
 const REFILL_POS = new THREE.Vector3(-3.2, 0, 3.4);
 function buildKinderTable(){
   const g = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.9), mat(0x9a6636));
+  const top = new THREE.Mesh(RB(1.5, 0.1, 0.9, 0.04), mat(0x9a6636, {roughness:.45}));
   top.position.y = 0.85; top.castShadow=true; g.add(top);
   [[-0.65,-0.35],[0.65,-0.35],[-0.65,0.35],[0.65,0.35]].forEach(([x,z])=>{
     const l = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.85,8), mat(0x6e4626));
@@ -781,7 +837,7 @@ function buildKinderTable(){
 const DESK_POS = new THREE.Vector3(3.5, 0, -3.7);
 function buildDesk(){
   const g = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 1), mat(0x8a5a32));
+  const top = new THREE.Mesh(RB(1.6, 0.1, 1, 0.04), mat(0x9a6636, {roughness:.45}));
   top.position.y = 0.9; top.castShadow=true; g.add(top);
   [[-0.7,-0.4],[0.7,-0.4],[-0.7,0.4],[0.7,0.4]].forEach(([x,z])=>{
     const l = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.9,0.08), mat(0x6e4626));
@@ -823,13 +879,13 @@ const obstacles = [];   // {x, z, r, mesh, ball?, vx?, vz?}
 function buildObstacles(){
   // כיסא עץ
   const chair = new THREE.Group();
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.5), mat(0x9a6636));
+  const seat = new THREE.Mesh(RB(0.5, 0.07, 0.5, 0.025), mat(0x9a6636, {roughness:.5}));
   seat.position.y = 0.5; seat.castShadow=true; chair.add(seat);
   [[-0.2,-0.2],[0.2,-0.2],[-0.2,0.2],[0.2,0.2]].forEach(([x,z])=>{
     const l = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.5,8), mat(0x6e4626));
     l.position.set(x, 0.25, z); chair.add(l);
   });
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.05), mat(0x9a6636));
+  const back = new THREE.Mesh(RB(0.5, 0.55, 0.06, 0.025), mat(0x9a6636, {roughness:.5}));
   back.position.set(0, 0.8, -0.23); back.castShadow=true; chair.add(back);
   chair.position.set(-1.7, 0, 1.9); chair.rotation.y = 0.6;
   scene.add(chair);
@@ -860,9 +916,9 @@ function buildObstacles(){
 
   // מזוודה פתוחה
   const suitcase = new THREE.Group();
-  const scBase = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.22, 0.55), mat(0x7a4a2a, {roughness:.7}));
+  const scBase = new THREE.Mesh(RB(0.85, 0.24, 0.55, 0.05), mat(0x9a5a30, {roughness:.5}));
   scBase.position.y = 0.11; scBase.castShadow=true; suitcase.add(scBase);
-  const scLid = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.2, 0.55), mat(0x6a3d20, {roughness:.7}));
+  const scLid = new THREE.Mesh(RB(0.85, 0.2, 0.55, 0.05), mat(0x84491f, {roughness:.5}));
   scLid.position.set(0, 0.25, -0.5); scLid.rotation.x = -1.9; suitcase.add(scLid);
   const clothes = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), mat(0xe0d8c0));
   clothes.scale.set(1.4, 0.5, 0.9); clothes.position.y = 0.25; suitcase.add(clothes);
@@ -872,7 +928,7 @@ function buildObstacles(){
 
   // זוג נעליים
   const shoes = new THREE.Group();
-  const sGeo = new THREE.BoxGeometry(0.14, 0.1, 0.32);
+  const sGeo = RB(0.14, 0.11, 0.32, 0.04);
   const s1 = new THREE.Mesh(sGeo, mat(0x222228)); s1.position.set(-0.08, 0.05, 0); s1.rotation.y = 0.3; shoes.add(s1);
   const s2 = new THREE.Mesh(sGeo, mat(0x222228)); s2.position.set(0.1, 0.05, 0.08); s2.rotation.y = -0.5; shoes.add(s2);
   shoes.position.set(0.5, 0, 1.5);
@@ -892,6 +948,17 @@ function buildObstacles(){
   ball.position.set(2.75, 0.26, 2.35);
   scene.add(ball);
   obstacles.push({x:2.75, z:2.35, r:0.32, mesh:ball, ball:true, vx:0, vz:0});
+
+  // שולחן הקינדרים חוסם תנועה — אי אפשר לעבור דרכו
+  obstacles.push({x:REFILL_POS.x, z:REFILL_POS.z, r:0.98, mesh:null});
+
+  // צלליות רכות מתחת למכשולים
+  for(const o of obstacles){
+    if(o.ball || !o.mesh) continue;
+    const sh = blobShadow(o.r*0.95);
+    sh.position.set(o.x, 0.015, o.z);
+    scene.add(sh);
+  }
 }
 function updateBall(dt){
   const b = obstacles.find(o=>o.ball);
@@ -903,6 +970,7 @@ function updateBall(dt){
   if(b.x < -5.4 || b.x > 5.4){ b.vx *= -0.7; b.x = clamp(b.x, -5.4, 5.4); }
   if(b.z < 1.0 || b.z > 4.5){ b.vz *= -0.7; b.z = clamp(b.z, 1.0, 4.5); }
   b.mesh.position.x = b.x; b.mesh.position.z = b.z;
+  ballShadow.position.set(b.x, 0.015, b.z);
   const sp = Math.hypot(b.vx, b.vz);
   if(sp > 0.05){
     b.mesh.rotation.x += b.vz/0.26*dt;
@@ -944,6 +1012,11 @@ zvi.group.position.set(1.8, 0, -3.4);
 scene.add(zvi.group);
 
 const friend = makeFriend();
+
+// צלליות דינמיות
+const daniShadow = blobShadow(0.62); scene.add(daniShadow);
+const friendShadow = blobShadow(0.5); friendShadow.visible = false; scene.add(friendShadow);
+const ballShadow = blobShadow(0.34); scene.add(ballShadow);
 
 // trajectory line
 const trajMat = new THREE.LineDashedMaterial({ color:0xffffff, dashSize:0.16, gapSize:0.12, transparent:true, opacity:0.85 });
@@ -1251,7 +1324,7 @@ function updateZvi(dt){
   const hiding = (Z.state==='hide');
   const sitting = (Z.state==='situp'||Z.state==='throwing'||Z.state==='liedown');
   const blTargetZ = hiding ? -0.62 : (Z.state==='peek' ? 0.0 : (sitting ? 0.85 : 0.38));
-  const blTargetY = hiding ? 0.86 : 0.78;
+  const blTargetY = hiding ? 0.8 : 0.72;
   bg.position.z = lerp(bg.position.z, blTargetZ, Math.min(1, dt*8));
   bg.position.y = lerp(bg.position.y, blTargetY, Math.min(1, dt*8));
   bg.position.x = lerp(bg.position.x, Z.rollX*0.5, Math.min(1, dt*2.5));
@@ -1453,6 +1526,8 @@ function updateDani(dt){
     dani.group.visible = Math.floor(G.invulnT*10)%2===0;
   } else dani.group.visible = true;
 
+  daniShadow.position.set(p.x, 0.015, p.z);
+
   const camTarget = new THREE.Vector3(p.x*0.75, 3.55, p.z+4.9);
   camera.position.lerp(camTarget, Math.min(1, dt*5));
   camera.lookAt(p.x*0.5, 1.1, p.z-6.5);
@@ -1509,6 +1584,8 @@ function setDarkness(k){   // k: 0 = חושך מלא, 1 = אור מלא
   lampLight.intensity = baseLight.lamp * k;
   scene.background.copy(BG_DARK).lerp(BG_DAY, k);
   scene.fog.color.copy(scene.background);
+  // מכבה גם את תאורת הסביבה — חושך אמיתי
+  renderer.toneMappingExposure = 1.05 * (0.1 + 0.9*k);
   if(sunbeam) sunbeam.material.opacity = 0.12*k;
 }
 function updateEvents(dt){
@@ -1519,7 +1596,9 @@ function updateEvents(dt){
       friend.position.x = lerp(6.5, -6.8, G.event.t / G.event.dur);
       friend.position.y = Math.abs(Math.sin(G.event.t*9))*0.06;
       friend.rotation.y = -Math.PI/2;
-      if(G.event.t > G.event.dur){ friend.visible = false; G.event = null; }
+      friendShadow.position.set(friend.position.x, 0.015, friend.position.z);
+      friendShadow.visible = friend.visible;
+      if(G.event.t > G.event.dur){ friend.visible = false; friendShadow.visible = false; G.event = null; }
     } else if(G.event.type==='blackout'){
       const e = G.event;
       const k = e.t < 0.35 ? 1-e.t/0.35 : (e.t > e.dur-0.5 ? (e.t-(e.dur-0.5))/0.5 : 0);
