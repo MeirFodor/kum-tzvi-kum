@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>קום צבי קום! 🍫</title>
+<meta property="og:title" content="קום צבי קום! 🍫">
+<meta property="og:description" content="צבי שוב ישן עד מאוחר. תעזור לדני להעיר אותו עם קינדר בואנו! מבוסס על סיפור אמיתי מהפנימייה.">
+<meta property="og:image" content="https://meirfodor.github.io/kum-tzvi-kum/assets/og.jpg">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://meirfodor.github.io/kum-tzvi-kum/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
 <style>
@@ -122,6 +127,16 @@
   #ov-result-emoji { font-size:70px; margin-bottom:6px; }
   .hidden { display:none !important; }
   #pause-overlay { background:rgba(10,6,20,.85); }
+
+  /* ארט דמויות בתפריט — מאחורי הטקסט */
+  .menu-art {
+    position:absolute; bottom:0; height:min(78vh, 560px); pointer-events:none; z-index:0;
+    filter:drop-shadow(0 12px 30px rgba(0,0,0,.5));
+  }
+  .art-dani { left:max(8px, 6vw); transform:scaleX(-1); }
+  .art-zvi { right:max(8px, 5vw); }
+  @media (max-width:1050px){ .menu-art { opacity:.25; height:60vh; } }
+  #menu-overlay > *:not(.menu-art) { position:relative; z-index:1; }
 </style>
 </head>
 <body>
@@ -158,6 +173,8 @@
 
 <!-- start menu -->
 <div class="overlay" id="menu-overlay">
+  <img src="assets/art_dani.png" alt="" class="menu-art art-dani">
+  <img src="assets/art_zvi.png" alt="" class="menu-art art-zvi">
   <div class="game-title">קום צבי קום! 🍫</div>
   <div class="game-sub">
     מבוסס על סיפור אמיתי לחלוטין. 🏫<br>
@@ -207,6 +224,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -1135,6 +1153,69 @@ scene.add(zvi.group);
 
 const friend = makeFriend();
 
+/* ---------- מודלים תלת-ממדיים שנוצרו ב-AI (אם קיימים; אחרת נשארת הדמות הקודית) ---------- */
+const gltfLoader = new GLTFLoader();
+function fitModel(obj, targetHeight, mode='floor'){
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const s = targetHeight / size.y;
+  obj.scale.setScalar(s);
+  box.setFromObject(obj);
+  const c = box.getCenter(new THREE.Vector3());
+  obj.position.x -= c.x;
+  obj.position.z -= c.z;
+  if(mode==='floor') obj.position.y -= box.min.y;
+  else obj.position.y -= c.y;   // center — מרכוז סביב הראשית
+}
+// מודלים מיוצאים עם metalness=1 שמחשיך את הטקסטורה — מנרמלים לחומר מט רגיל
+function fixGlbMaterials(root, brighten=1){
+  root.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow = true;
+      if(o.material){
+        o.material.metalness = 0;
+        o.material.roughness = 0.85;
+        // הטקסטורות מיוצאות בערכים לינאריים אך מתויגות sRGB — גמא כפולה שמחשיכה הכל
+        if(o.material.map){
+          o.material.map.colorSpace = THREE.LinearSRGBColorSpace;
+          o.material.map.needsUpdate = true;
+        }
+        // פיצוי חשיפה לטקסטורות שנאפו כהות (color מכפיל את הטקסטורה)
+        if(brighten !== 1) o.material.color.setRGB(brighten, brighten, brighten);
+        o.material.needsUpdate = true;
+      }
+    }
+  });
+}
+gltfLoader.load('assets/dani.glb', (g)=>{
+  const m = g.scene;
+  fixGlbMaterials(m);
+  fitModel(m, 2.15, 'floor');
+  const wrap = new THREE.Group();
+  wrap.add(m);
+  dani.group.add(wrap);
+  dani.group.children.forEach(ch=>{ if(ch!==wrap) ch.visible = false; });
+  dani.glb = wrap;   // עוגני הזרוע הקודיים ממשיכים לשמש לחישובי זריקה
+  // קינדר ביד המורמת (המודל עצמו בלי קינדר — כדי שהטקסטורה לא תדלוף לגב)
+  const heldGlb = makeKinderMesh(false);
+  heldGlb.scale.setScalar(1.5);
+  heldGlb.position.set(0.52, 1.74, 0.1);
+  heldGlb.rotation.set(0.3, 0.4, 0.5);
+  wrap.add(heldGlb);
+  dani.heldGlb = heldGlb;
+}, undefined, ()=>{});
+gltfLoader.load('assets/zvi_head.glb', (g)=>{
+  const m = g.scene;
+  fixGlbMaterials(m);
+  // המודל הוא פסלון: ראש + צוואר + כן — הכן שוקע בתוך הגוף ולא נראה
+  fitModel(m, 1.0, 'center');
+  m.position.y += 0.1;
+  zvi.head.children.forEach(ch=>{ ch.visible = false; });
+  zvi.head.add(m);
+  zvi.headGlb = m;
+  zvi.skull.position.y = 0.28;   // עוגן הפגיעה על מרכז הראש הוויזואלי
+}, undefined, ()=>{});
+
 // צלליות דינמיות
 const daniShadow = blobShadow(0.62); scene.add(daniShadow);
 const friendShadow = blobShadow(0.5); friendShadow.visible = false; scene.add(friendShadow);
@@ -1642,6 +1723,12 @@ function updateDani(dt){
     arm.rotation.x = lerp(arm.rotation.x, -0.35, dt*6);
   }
   dani.held.visible = ammoCount()>0 && !arm.userData.anim;
+  if(dani.heldGlb) dani.heldGlb.visible = ammoCount()>0;
+  // עם מודל AI: טעינה = רכינה לאחור, זריקה = תנופה קדימה
+  if(dani.glb){
+    const leanTarget = G.charging ? 0.18 : (arm.userData.anim > 0 ? -0.15 : 0);
+    dani.glb.rotation.x = lerp(dani.glb.rotation.x, leanTarget, Math.min(1, dt*10));
+  }
 
   if(G.invulnT>0){
     G.invulnT -= dt;
