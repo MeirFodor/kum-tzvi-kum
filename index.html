@@ -474,7 +474,8 @@ const PLASTER = (()=>{
 
 /* ---------- room ---------- */
 const ROOM = { W:12, D:10 };   // x: -6..6, z: -5..5
-let sunbeam, lightPool;
+let sunbeam, lightPool, bed2Proc;
+const WARD_PARTS = [];   // חלקי הארון הקודי — מוסתרים כשנטען המודל
 function buildRoom(){
   const g = new THREE.Group();
 
@@ -657,18 +658,18 @@ function buildRoom(){
 
   // ארון בגדים — בקדמת החדר, דני לוקח ממנו חבילות קינדר
   const ward = new THREE.Mesh(RB(0.85, 2.7, 1.9, 0.06), wmat(0x9a6636));
-  ward.position.set(-ROOM.W/2+0.55, 1.35, 2.0); ward.castShadow=true; g.add(ward);
+  ward.position.set(-ROOM.W/2+0.55, 1.35, 4.0); ward.castShadow=true; g.add(ward); WARD_PARTS.push(ward);
   const wardDoorLine = new THREE.Mesh(new THREE.BoxGeometry(0.87, 2.5, 0.02), mat(0x7a5230));
-  wardDoorLine.position.set(-ROOM.W/2+0.55, 1.3, 2.0); g.add(wardDoorLine);
-  [[2.25],[1.75]].forEach(([z])=>{
+  wardDoorLine.position.set(-ROOM.W/2+0.55, 1.3, 4.0); g.add(wardDoorLine); WARD_PARTS.push(wardDoorLine);
+  [[4.25],[3.75]].forEach(([z])=>{
     const kb = new THREE.Mesh(new THREE.SphereGeometry(0.035), mat(0xd9b23a, {metalness:.6}));
-    kb.position.set(-ROOM.W/2+0.99, 1.35, z); g.add(kb);
+    kb.position.set(-ROOM.W/2+0.99, 1.35, z); g.add(kb); WARD_PARTS.push(kb);
   });
   // כובע שחור על הארון — פרט חרדי אותנטי
   const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.03, 26), mat(0x14141a, {roughness:.35}));
-  hatBrim.position.set(-ROOM.W/2+0.55, 2.73, 2.3); hatBrim.rotation.z = 0.05; g.add(hatBrim);
+  hatBrim.position.set(-ROOM.W/2+0.55, 2.73, 4.3); hatBrim.rotation.z = 0.05; g.add(hatBrim); WARD_PARTS.push(hatBrim);
   const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.175, 0.17, 26), mat(0x14141a, {roughness:.35}));
-  hatCrown.position.set(-ROOM.W/2+0.55, 2.82, 2.3); hatCrown.rotation.z = 0.05; g.add(hatCrown);
+  hatCrown.position.set(-ROOM.W/2+0.55, 2.82, 4.3); hatCrown.rotation.z = 0.05; g.add(hatCrown); WARD_PARTS.push(hatCrown);
   // נעלי בית ליד המיטה של צבי
   [[1.05,-2.15,0.4],[1.3,-2.2,-0.2]].forEach(([x,z,ry])=>{
     const sl = new THREE.Mesh(RB(0.13, 0.08, 0.3, 0.035), mat(0x7a4a5a, {roughness:.9}));
@@ -676,9 +677,9 @@ function buildRoom(){
   });
 
   // מיטה שנייה (של השותף שכבר קם) — לא מסודרת
-  const bed2 = makeBedFrame(0x6a8fc4, {messy:true});
-  bed2.position.set(-4.35, 0, -3.4); bed2.rotation.y = Math.PI/2;
-  g.add(bed2);
+  bed2Proc = makeBedFrame(0x6a8fc4, {messy:true});
+  bed2Proc.position.set(-4.35, 0, -3.4); bed2Proc.rotation.y = Math.PI/2;
+  g.add(bed2Proc);
 
   // מנורת תקרה
   const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.7), mat(0x333333));
@@ -895,35 +896,49 @@ function makeZvi(){
   bump.position.set(0, 0.72, 0.5);
   g.add(bump);
 
-  // שמיכה חלקה: משטח מעוגל + תל גוף מובנה + כנפי צד רכות + קיפול סדין
+  // שמיכת בד אמיתית: יריעה מקומטת עם תל גוף, פסים ארוגים ונפילה על הצדדים
   const blanketGrp = new THREE.Group();
-  // בד פיזיקלי עם ברק אריג (sheen) — נראה כמו שמיכה אמיתית
+  const blanketTex = canvasTex(256, 256, cx=>{
+    cx.fillStyle = '#4a76e8'; cx.fillRect(0, 0, 256, 256);
+    cx.fillStyle = '#f0913f';
+    cx.fillRect(0, 34, 256, 13); cx.fillRect(0, 54, 256, 6);
+    cx.fillRect(0, 196, 256, 13); cx.fillRect(0, 216, 256, 6);
+    for(let i=0;i<1600;i++){
+      const v = Math.random() < .5 ? 255 : 0;
+      cx.fillStyle = 'rgba('+v+','+v+','+v+',.03)';
+      cx.fillRect(rand(0,255), rand(0,255), 1.6, 1.6);
+    }
+  });
   const blMat = new THREE.MeshPhysicalMaterial({
-    color:BLANKET_C, roughness:.92, metalness:0,
+    map: blanketTex, roughness:.92, metalness:0, side:THREE.DoubleSide,
     sheen:1, sheenRoughness:.55, sheenColor:new THREE.Color(0x9db8ff),
-    bumpMap:FABRIC, bumpScale:0.015,
+    bumpMap:FABRIC, bumpScale:0.012,
   });
-  const blTop = new THREE.Mesh(RB(1.42, 0.12, 1.78, 0.05), blMat);
-  blTop.castShadow = true; blanketGrp.add(blTop);
-  // תל הגוף — חלק מהשמיכה עצמה
-  const mound = new THREE.Mesh(new THREE.CapsuleGeometry(0.33, 0.8, 8, 18), blMat);
-  mound.rotation.x = Math.PI/2;
-  mound.scale.set(1.08, 1, 0.5);
-  mound.position.set(0, 0.08, 0.22);
-  mound.castShadow = true;
-  blanketGrp.add(mound);
-  // פסים דקורטיביים על החלקים השטוחים
-  [[-0.68],[0.82]].forEach(([z])=>{
-    const s = new THREE.Mesh(RB(1.43, 0.03, 0.15, 0.01), mat(0xf0913f, {roughness:.8}));
-    s.position.set(0, 0.06, z); blanketGrp.add(s);
-  });
-  // כנפי צד — נופלות על צידי המזרן
-  const flapL = new THREE.Mesh(RB(0.1, 0.5, 1.78, 0.04), blMat);
-  flapL.position.set(-0.72, -0.24, 0); flapL.rotation.z = 0.12; blanketGrp.add(flapL);
-  const flapR = flapL.clone(); flapR.position.x = 0.72; flapR.rotation.z = -0.12; blanketGrp.add(flapR);
-  // קיפול סדין לבן בקצה העליון (ליד החזה)
-  const fold = new THREE.Mesh(RB(1.44, 0.1, 0.28, 0.04), mat(0xffffff, {roughness:.9}));
-  fold.position.set(0, 0.02, -0.84); blanketGrp.add(fold);
+  const clothGeo = new THREE.PlaneGeometry(1.6, 1.95, 30, 38);
+  {
+    const cpos = clothGeo.attributes.position;
+    for(let i=0;i<cpos.count;i++){
+      const x = cpos.getX(i), zz = -cpos.getY(i);
+      let h = 0;
+      // תל הגוף — רכס מתעגל לאורך, נמוג לקצוות
+      const along = clamp((zz + 0.55) / 1.3, 0, 1);
+      h += 0.26 * Math.exp(-(x*x)/(0.34*0.34)) * Math.sin(Math.PI * along);
+      // קימוטי בד עדינים
+      h += 0.018 * Math.sin(x*15 + zz*7) + 0.012 * Math.sin(x*29 - zz*17);
+      // נפילה רכה על צידי המזרן
+      const over = Math.abs(x) - 0.6;
+      if(over > 0) h -= Math.min(0.45, over * 1.5);
+      cpos.setZ(i, h);
+    }
+    clothGeo.computeVertexNormals();
+  }
+  const cloth = new THREE.Mesh(clothGeo, blMat);
+  cloth.rotation.x = -Math.PI/2;
+  cloth.castShadow = true;
+  blanketGrp.add(cloth);
+  // קיפול סדין לבן בקצה שליד החזה
+  const fold = new THREE.Mesh(RB(1.3, 0.07, 0.24, 0.03), fmat(0xffffff));
+  fold.position.set(0, 0.015, -0.9); fold.rotation.z = 0.02; blanketGrp.add(fold);
   blanketGrp.position.set(0, 0.72, 0.38);
   g.add(blanketGrp);
 
@@ -962,7 +977,27 @@ function kinderWrapperTex(golden){
   });
 }
 const KINDER_TEX = kinderWrapperTex(false), KINDER_TEX_GOLD = kinderWrapperTex(true);
+let KINDER_GLB = null;   // מודל הקינדר האמיתי — נטען אסינכרונית ומחליף את הגרסה הקודית
 function makeKinderMesh(golden){
+  if(KINDER_GLB){
+    const g = new THREE.Group();
+    const c = KINDER_GLB.clone();
+    if(golden){
+      c.traverse(o=>{
+        if(o.isMesh && o.material){
+          o.material = o.material.clone();
+          o.material.emissive = new THREE.Color(0x8a6a00);
+          o.material.color.setRGB(1.35, 1.15, 0.55);
+        }
+      });
+      g.add(new THREE.PointLight(0xffcc44, 1.2, 2.5));
+    }
+    g.add(c);
+    return g;
+  }
+  return makeKinderMeshProc(golden);
+}
+function makeKinderMeshProc(golden){
   const g = new THREE.Group();
   const wrapMat = new THREE.MeshStandardMaterial({ map: golden?KINDER_TEX_GOLD:KINDER_TEX, roughness:.38, metalness:.05 });
   const sideMat = mat(golden?0xf0c34a:0xefe9df, {roughness:.4});
@@ -992,8 +1027,8 @@ function makeKinderMesh(golden){
 }
 
 /* ---------- kinder table (refill station) ---------- */
-const REFILL_POS = new THREE.Vector3(-3.2, 0, 3.4);
-const WARDROBE_POS = { x:-5.45, z:2.0 };   // הארון בקדמת החדר — דני לוקח ממנו חבילות
+const REFILL_POS = new THREE.Vector3(3.4, 0, 3.6);          // שולחן הקינדרים — פינה קדמית ימנית
+const WARDROBE_POS = { x:-5.45, z:4.0 };                    // הארון — פינה קדמית שמאלית, מסלול פתוח
 function buildKinderTable(){
   const g = new THREE.Group();
   const frame = [];
@@ -1074,9 +1109,9 @@ function buildObstacles(){
   });
   const back = new THREE.Mesh(RB(0.5, 0.55, 0.06, 0.025), wmat(0x9a6636));
   back.position.set(0, 0.8, -0.23); back.castShadow=true; chair.add(back);
-  chair.position.set(-1.7, 0, 1.9); chair.rotation.y = 0.6;
+  chair.position.set(-1.3, 0, 1.7); chair.rotation.y = 0.6;
   scene.add(chair);
-  obstacles.push({x:-1.7, z:1.9, r:0.52, mesh:chair});
+  obstacles.push({x:-1.3, z:1.7, r:0.5, mesh:chair, name:'chair'});
 
   // תיק גב
   const bag = new THREE.Group();
@@ -1086,9 +1121,9 @@ function buildObstacles(){
   bagFlap.position.y = 0.55; bagFlap.scale.set(1, 0.7, 0.7); bag.add(bagFlap);
   const strap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.4, 0.03), mat(0x0f3050));
   strap.position.set(0.16, 0.32, 0.2); strap.rotation.x = 0.3; bag.add(strap);
-  bag.position.set(1.15, 0, 3.25); bag.rotation.y = -0.7;
+  bag.position.set(2.2, 0, 2.2); bag.rotation.y = -0.7;
   scene.add(bag);
-  obstacles.push({x:1.15, z:3.25, r:0.44, mesh:bag});
+  obstacles.push({x:2.2, z:2.2, r:0.44, mesh:bag, name:'bag'});
 
   // ערימת כביסה
   const laundry = new THREE.Group();
@@ -1097,9 +1132,9 @@ function buildObstacles(){
     blob.scale.set(1.4, 0.6, 1.2); blob.position.set(x, y+r*0.5, rand(-0.1,0.1));
     blob.castShadow=true; laundry.add(blob);
   });
-  laundry.position.set(-3.4, 0, 1.7);
+  laundry.position.set(1.3, 0, 1.5);
   scene.add(laundry);
-  obstacles.push({x:-3.4, z:1.7, r:0.55, mesh:laundry});
+  obstacles.push({x:1.3, z:1.5, r:0.5, mesh:laundry, name:'laundry'});
 
   // מזוודה פתוחה
   const suitcase = new THREE.Group();
@@ -1109,18 +1144,18 @@ function buildObstacles(){
   scLid.position.set(0, 0.25, -0.5); scLid.rotation.x = -1.9; suitcase.add(scLid);
   const clothes = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), mat(0xe0d8c0));
   clothes.scale.set(1.4, 0.5, 0.9); clothes.position.y = 0.25; suitcase.add(clothes);
-  suitcase.position.set(-1.15, 0, 3.65); suitcase.rotation.y = 0.4;
+  suitcase.position.set(0.3, 0, 2.2); suitcase.rotation.y = 0.4;
   scene.add(suitcase);
-  obstacles.push({x:-1.15, z:3.65, r:0.52, mesh:suitcase});
+  obstacles.push({x:0.3, z:2.2, r:0.52, mesh:suitcase, name:'suitcase'});
 
   // זוג נעליים
   const shoes = new THREE.Group();
   const sGeo = RB(0.14, 0.11, 0.32, 0.04);
   const s1 = new THREE.Mesh(sGeo, mat(0x222228)); s1.position.set(-0.08, 0.05, 0); s1.rotation.y = 0.3; shoes.add(s1);
   const s2 = new THREE.Mesh(sGeo, mat(0x222228)); s2.position.set(0.1, 0.05, 0.08); s2.rotation.y = -0.5; shoes.add(s2);
-  shoes.position.set(0.5, 0, 1.5);
+  shoes.position.set(-0.6, 0, 1.5);
   scene.add(shoes);
-  obstacles.push({x:0.5, z:1.5, r:0.32, mesh:shoes});
+  obstacles.push({x:-0.6, z:1.5, r:0.32, mesh:shoes});
 
   // כדורגל — דינמי! אפשר לבעוט בו
   const ball = new THREE.Group();
@@ -1134,12 +1169,12 @@ function buildObstacles(){
   }
   ball.position.set(2.75, 0.26, 2.35);
   scene.add(ball);
-  obstacles.push({x:2.75, z:2.35, r:0.32, mesh:ball, ball:true, vx:0, vz:0});
+  obstacles.push({x:2.75, z:2.35, r:0.32, mesh:ball, ball:true, vx:0, vz:0, name:'ball'});
 
   // שולחן הקינדרים חוסם תנועה — אי אפשר לעבור דרכו
-  obstacles.push({x:REFILL_POS.x, z:REFILL_POS.z, r:0.98, mesh:null});
-  // הארון חוסם תנועה
-  obstacles.push({x:WARDROBE_POS.x, z:WARDROBE_POS.z, r:0.78, mesh:null});
+  obstacles.push({x:REFILL_POS.x, z:REFILL_POS.z, r:0.8, mesh:null});
+  // הארון חוסם תנועה (רדיוס קטן — שיהיה קל להגיע אליו)
+  obstacles.push({x:WARDROBE_POS.x, z:WARDROBE_POS.z, r:0.55, mesh:null});
 
   // צלליות רכות מתחת למכשולים
   for(const o of obstacles){
@@ -1287,12 +1322,21 @@ function swapFurniture(url, opts){
 swapFurniture('assets/bed_zvi.glb', {
   longSize: 2.6, longAxis: 'z', parent: zvi.group,
   hide: [zvi.group.userData.bedProc, zvi.group.userData.pillowProc],
-  onLoad: ()=>{
+  onLoad: (m)=>{
     // המזרן והכרית של המיטה החדשה גבוהים יותר — מרימים את צבי
     ZVI_LIFT = 0.14;
     zvi.hipPivot.position.y = 0.66 + ZVI_LIFT;
     zvi.hipPivot.position.z = 0.28;
     zvi.bump.position.y = 0.72 + ZVI_LIFT;
+    // משכפלים את המיטה גם למיטה השנייה של השותף — בחינם
+    if(bed2Proc){
+      const w2 = new THREE.Group();
+      w2.add(m.clone());
+      w2.position.set(-4.35, 0, -3.4);
+      w2.rotation.y = Math.PI/2;
+      scene.add(w2);
+      bed2Proc.visible = false;
+    }
   },
 });
 swapFurniture('assets/table.glb', {
@@ -1308,6 +1352,92 @@ swapFurniture('assets/desk.glb', {
   longSize: 1.7, longAxis: 'x', parent: deskGroup,
   hide: [...deskGroup.children],
 });
+// שמיכה תלת-ממדית אמיתית — מחליפה את השמיכה הקודית, ממשיכה להחליק באנימציות
+gltfLoader.load('assets/blanket.glb', (g)=>{
+  const m = g.scene;
+  fixGlbMaterials(m, 1.35);   // פיצוי לטקסטורת sam הכהה
+  let box = new THREE.Box3().setFromObject(m);
+  let size = box.getSize(new THREE.Vector3());
+  if(size.x > size.z) m.rotation.y = Math.PI/2;   // האורך לציר z
+  const wrap = new THREE.Group();
+  wrap.add(m);
+  box = new THREE.Box3().setFromObject(wrap);
+  size = box.getSize(new THREE.Vector3());
+  wrap.scale.setScalar(1.9 / size.z);
+  box.setFromObject(wrap);
+  const c = box.getCenter(new THREE.Vector3());
+  const h = box.max.y - box.min.y;
+  // ראשית קבוצת השמיכה היא בערך פני השמיכה — רוב הגובה מתחת
+  wrap.position.set(-c.x, -box.min.y - h*0.8, -c.z);
+  [...zvi.blanketGrp.children].forEach(ch=>{ ch.visible = false; });
+  zvi.blanketGrp.add(wrap);
+  zvi.blanketGlb = wrap;
+}, undefined, ()=>{});
+
+// ארון תלת-ממדי (כולל הכובע למעלה)
+gltfLoader.load('assets/wardrobe.glb', (g)=>{
+  const m = g.scene;
+  fixGlbMaterials(m);
+  m.rotation.y = Math.PI/2;   // הדלתות פונות למרכז החדר
+  fitModel(m, 2.75, 'floor');
+  m.position.x += WARDROBE_POS.x + 0.1;
+  m.position.z += WARDROBE_POS.z;
+  scene.add(m);
+  WARD_PARTS.forEach(p=>{ p.visible = false; });
+}, undefined, ()=>{});
+
+// אביזרים תלת-ממדיים (תיק, מזוודה, כיסא, כדור)
+function swapProp(url, name, targetH, mode='floor'){
+  const o = obstacles.find(ob=>ob.name===name);
+  if(!o || !o.mesh) return;
+  gltfLoader.load(url, (g)=>{
+    const m = g.scene;
+    fixGlbMaterials(m, 1.2);   // טקסטורות sam מעט כהות — הבהרה קלה
+    fitModel(m, targetH, mode);
+    [...o.mesh.children].forEach(ch=>{ ch.visible = false; });
+    o.mesh.add(m);
+  }, undefined, ()=>{});
+}
+swapProp('assets/backpack.glb', 'bag', 0.75);
+swapProp('assets/suitcase.glb', 'suitcase', 0.45);
+swapProp('assets/chair.glb', 'chair', 1.05);
+swapProp('assets/ball.glb', 'ball', 0.55, 'center');
+
+// מודל הקינדר בואנו האמיתי — מחליף את כל הקינדרים במשחק
+gltfLoader.load('assets/kinder.glb', (g)=>{
+  const m = g.scene;
+  fixGlbMaterials(m);
+  // מיישרים את האורך לציר x ומשכיבים
+  let box = new THREE.Box3().setFromObject(m);
+  let size = box.getSize(new THREE.Vector3());
+  if(size.y >= size.x && size.y >= size.z) m.rotation.z = Math.PI/2;      // עומד — משכיבים
+  else if(size.z > size.x) m.rotation.y = Math.PI/2;                      // אורך ב-z — מסובבים
+  const wrap = new THREE.Group();
+  wrap.add(m);
+  box = new THREE.Box3().setFromObject(wrap);
+  size = box.getSize(new THREE.Vector3());
+  const s = 0.46 / size.x;
+  wrap.scale.setScalar(s);
+  box.setFromObject(wrap);
+  const c = box.getCenter(new THREE.Vector3());
+  m.position.x -= c.x/s; m.position.y -= c.y/s; m.position.z -= c.z/s;
+  KINDER_GLB = wrap;
+  // מחליפים את הקינדרים שכבר נבנו (ערימה + ביד של דני)
+  kinderTable.pile = kinderTable.pile.map(k=>{
+    const nk = makeKinderMesh(false);
+    nk.position.copy(k.position); nk.rotation.copy(k.rotation); nk.visible = k.visible;
+    k.parent.add(nk); k.parent.remove(k);
+    return nk;
+  });
+  if(dani.heldGlb){
+    const old = dani.heldGlb;
+    const nk = makeKinderMesh(false);
+    nk.position.copy(old.position); nk.rotation.copy(old.rotation); nk.scale.copy(old.scale);
+    nk.visible = old.visible;
+    old.parent.add(nk); old.parent.remove(old);
+    dani.heldGlb = nk;
+  }
+}, undefined, ()=>{});
 
 // חבילת קינדרים שדני סוחב מהארון
 {
@@ -1727,7 +1857,7 @@ function updateKinders(dt){
       const dHead = p.distanceTo(headPos);
       const dChest = Math.hypot(p.x-_v1.x, (p.y-_v1.y)/ySquash, p.z-_v1.z);
       const dLegs = Math.hypot(p.x-_v2.x, (p.y-_v2.y)/0.45, p.z-_v2.z);
-      if(dHead < 0.46 || dChest < 0.52 || dLegs < 0.62){
+      if(dHead < 0.6 || dChest < 0.52 || dLegs < 0.62){
         if(Z.headHidden){
           sfx.thud();
           say(zvi.blanketGrp, pick(['בום.','כלום!','מוגן!!']), 0.9);
@@ -1735,7 +1865,7 @@ function updateKinders(dt){
           k.hitSomething = true;
           removeKinder(i); continue;
         }
-        const kind = (Z.state==='peek' && dHead<0.52) ? 'peek' : (dHead < 0.46 ? 'head' : 'body');
+        const kind = (Z.state==='peek' && dHead<0.66) ? 'peek' : (dHead < 0.6 ? 'head' : 'body');
         registerHit(kind, k.golden);
         k.hitSomething = true;
         removeKinder(i); continue;
@@ -1884,10 +2014,10 @@ function updateDani(dt){
     G.refillT = 0;
   }
   // לקיחת חבילה מהארון כשהשולחן ריק
-  const nearWard = Math.hypot(p.x-WARDROBE_POS.x, p.z-WARDROBE_POS.z) < 1.75;
+  const nearWard = Math.hypot(p.x-WARDROBE_POS.x, p.z-WARDROBE_POS.z) < 2.2;
   if(nearWard && G.tableStock<=0 && !G.carrying){
     G.pickT += dt;
-    if(G.pickT > 0.9){
+    if(G.pickT > 0.55){
       G.pickT = 0;
       G.carrying = true;
       if(dani.pack) dani.pack.visible = true;
