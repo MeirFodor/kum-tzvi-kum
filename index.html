@@ -534,9 +534,17 @@ function buildRoom(){
   wallSet(0, ROOM.D, -ROOM.W/2, 0, false);
   wallSet(0, ROOM.D, ROOM.W/2, 0, false);
 
-  // window + frame + curtains + sunbeam
-  const winFrame = new THREE.Mesh(new THREE.BoxGeometry(2.7, 2.0, 0.12), mat(0x7a5230));
-  winFrame.position.set(-3.2, 2.5, -ROOM.D/2+0.12); g.add(winFrame);
+  // window — מסגרת עץ אמיתית (border), אדן בולט, זכוכית מבריקה עם נוף
+  const winWood = wmat(0xa9743e, {roughness:.5});
+  const WX = -3.2, WY = 2.5, WZ = -ROOM.D/2+0.16;
+  // 4 מסבי מסגרת סביב הזכוכית
+  const frameT = new THREE.Mesh(RB(2.74, 0.2, 0.16, 0.05), winWood); frameT.position.set(WX, WY+0.95, WZ); g.add(frameT);
+  const frameB = frameT.clone(); frameB.position.set(WX, WY-0.95, WZ); g.add(frameB);
+  const frameL = new THREE.Mesh(RB(0.2, 2.1, 0.16, 0.05), winWood); frameL.position.set(WX-1.27, WY, WZ); g.add(frameL);
+  const frameR = frameL.clone(); frameR.position.set(WX+1.27, WY, WZ); g.add(frameR);
+  // אדן חלון בולט
+  const winSill = new THREE.Mesh(RB(2.98, 0.13, 0.36, 0.04), winWood);
+  winSill.position.set(WX, WY-1.02, WZ+0.12); g.add(winSill);
   const winGlass = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.7),
     new THREE.MeshBasicMaterial({ map: canvasTex(256,192, cx=>{
       // נוף בוקר: שמיים, שמש זורחת, בניין הישיבה, עץ ועננים
@@ -558,11 +566,17 @@ function buildRoom(){
       cx.beginPath(); cx.ellipse(70,36,28,9,0,0,7); cx.fill();
       cx.beginPath(); cx.ellipse(128,58,20,7,0,0,7); cx.fill();
     })}));
-  winGlass.position.set(-3.2, 2.5, -ROOM.D/2+0.2); g.add(winGlass);
-  const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.8, 0.06), mat(0x7a5230));
-  bar1.position.set(-3.2, 2.5, -ROOM.D/2+0.22); g.add(bar1);
-  const bar2 = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.08, 0.06), mat(0x7a5230));
-  bar2.position.set(-3.2, 2.5, -ROOM.D/2+0.22); g.add(bar2);
+  winGlass.position.set(WX, WY, WZ+0.02); g.add(winGlass);
+  // שכבת זכוכית מבריקה מעל הנוף — השתקפות עדינה
+  const glassPane = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.7),
+    new THREE.MeshPhysicalMaterial({ color:0xdfeeff, transparent:true, opacity:0.14,
+      roughness:0.08, metalness:0 }));
+  glassPane.position.set(WX, WY, WZ+0.05); g.add(glassPane);
+  // סורגי חלון מעץ (חלוקה ל-4 שמשות)
+  const bar1 = new THREE.Mesh(RB(0.09, 1.7, 0.09, 0.03), winWood);
+  bar1.position.set(WX, WY, WZ+0.08); g.add(bar1);
+  const bar2 = new THREE.Mesh(RB(2.4, 0.09, 0.09, 0.03), winWood);
+  bar2.position.set(WX, WY, WZ+0.08); g.add(bar2);
   const curtMat = fmat(0xf0913f, {roughness:.85});
   const curtL = new THREE.Mesh(RB(0.5, 2.3, 0.12, 0.05), curtMat);
   curtL.position.set(-4.65, 2.5, -ROOM.D/2+0.2); curtL.rotation.z = 0.03; g.add(curtL);
@@ -585,15 +599,31 @@ function buildRoom(){
   lightPool.position.set(-2.55, 0.02, -3.0);
   g.add(lightPool);
 
-  // door on right wall
-  const door = new THREE.Mesh(RB(0.12, 2.6, 1.3, 0.04), wmat(0x9a6636));
-  door.position.set(ROOM.W/2-0.12, 1.3, 1.2); g.add(door);
-  const doorPanel = new THREE.Mesh(RB(0.06, 1.0, 0.9, 0.03), mat(0x8a5a2e, {roughness:.6}));
-  doorPanel.position.set(ROOM.W/2-0.16, 1.75, 1.2); g.add(doorPanel);
-  const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.8, 1.5), mat(0x6e4626));
-  doorFrame.position.set(ROOM.W/2-0.06, 1.35, 1.2); g.add(doorFrame);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06), mat(0xd9b23a, {metalness:.7, roughness:.3}));
-  knob.position.set(ROOM.W/2-0.24, 1.3, 0.75); g.add(knob);
+  // door on right wall — דלת עץ עם משקוף, שתי סַפִּים שקועים, ידית מנוף וצירים
+  const doorWood = wmat(0xa9743e, {roughness:.5});
+  const doorX = ROOM.W/2-0.1, doorZ = 1.2;
+  // משקוף בולט מסביב
+  const doorCasing = new THREE.Mesh(RB(0.14, 2.86, 1.56, 0.04), wmat(0x7a5230, {roughness:.5}));
+  doorCasing.position.set(ROOM.W/2-0.05, 1.4, doorZ); g.add(doorCasing);
+  const door = new THREE.Mesh(RB(0.12, 2.62, 1.32, 0.04), doorWood);
+  door.position.set(doorX, 1.31, doorZ); door.castShadow=true; g.add(door);
+  // שתי מסגרות סף שקועות
+  [[1.85, 0.95],[0.78, 0.95]].forEach(([y,h])=>{
+    const panelOut = new THREE.Mesh(RB(0.04, h, 0.92, 0.03), wmat(0x9a6636, {roughness:.55}));
+    panelOut.position.set(doorX-0.075, y, doorZ); g.add(panelOut);
+    const panelIn = new THREE.Mesh(RB(0.05, h-0.16, 0.76, 0.02), wmat(0xb5813f, {roughness:.5}));
+    panelIn.position.set(doorX-0.085, y, doorZ); g.add(panelIn);
+  });
+  // ידית מנוף על צלחת
+  const plate = new THREE.Mesh(RB(0.03, 0.28, 0.1, 0.02), mat(0xc9a23a, {metalness:.7, roughness:.3}));
+  plate.position.set(doorX-0.13, 1.3, doorZ-0.5); g.add(plate);
+  const lever = new THREE.Mesh(RB(0.05, 0.05, 0.22, 0.02), mat(0xd9b23a, {metalness:.75, roughness:.25}));
+  lever.position.set(doorX-0.18, 1.3, doorZ-0.58); g.add(lever);
+  // צירים
+  [1.95, 0.65].forEach(y=>{
+    const hinge = new THREE.Mesh(RB(0.04, 0.18, 0.05, 0.01), mat(0x8a8a8a, {metalness:.6, roughness:.4}));
+    hinge.position.set(doorX-0.05, y, doorZ+0.62); g.add(hinge);
+  });
 
   // posters — מצוירים
   const posterDefs = [
